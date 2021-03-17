@@ -40,6 +40,11 @@ TODO:
                                         describes a neural network with 3
                                         layers containing 784 input neurons, 
                                         50 hidden and 10 output neurons.)
+                                        
+           activation_function:         An object that implements the activation
+                                        function and its derivitive used in the
+                                        neural netowork. See "Activation" for
+                                        more info.
                     
            learning_rate:               The learning rate of the network. 
                                         Dicates the step size of weight changes 
@@ -90,6 +95,7 @@ class SynapticCacheNetwork():
         self.n_layers = len(layers)
         self.layers = layers
         self.n_labels = layers[-1]
+        #Xavier initialisation
         self.weights = [np.random.randn(i, j)*np.sqrt(1/(i)) for i, j in zip(layers[:-1], layers[1:])]
         self.weights_eLTP = [np.zeros(w.shape) for w in self.weights]
         self.weights_lLTP = [np.zeros(w.shape) for w in self.weights]
@@ -106,17 +112,33 @@ class SynapticCacheNetwork():
         self.energy_lLTP = [np.zeros(w.shape) for w in self.weights_eLTP] 
         self.energy_bias = [np.zeros(b.shape) for b in self.biases] # store bias energies
         self.energy_min = [np.zeros(w.shape) for w in self.weights_eLTP]
-        self.synapses_to_update_lLTP = [np.zeros(w.shape) for w in self.weights] # prevents multiple initialisations, similarly below
+        #Track synaptic changes to be made, prevents multiple initialisations, which may be expensive
+        self.synapses_to_update_lLTP = [np.zeros(w.shape) for w in self.weights]
         self.neurons_to_update_lLTP = [np.zeros(n) for n in layers[1:]] # consolidation happens to the inputs of neurons, dendritic if you will
         self.layers_to_update_lLTP = np.zeros(np.shape(layers), dtype=bool)
         self.network_update = False
         
+    """
+        feedforward():
+            Description: Gets the network output for a given input.
+            
+            Arguments:
+                output: the input to the neural network, unfortunately named so 
+                        so that it can be used in a loop. An array.
+            
+            Returns:
+                activations: The synpatic inputs before passing the activation 
+                             function. A python list of numpy arrays.                  
+                outputs:     The ouput of the neuron, having passed the activation
+                             function. A python list of numpy arrays.
+    """
     def feedforward(self, output):
         outputs = [output]
         activations = []
         layer = 1 # avoid from count from 0 error (i think if we start from 0 then it assumes synapses into the input)
         for b, w in zip(self.biases, self.weights):
             activation = np.matmul(w.T, output) + b
+            #softmax
             if layer == self.n_layers-1: # again no synapses at the output, final layer of synapses between last hidden and final layer 
                 output = self.softmax(activation)
             else:
@@ -125,6 +147,36 @@ class SynapticCacheNetwork():
             outputs.append(output)
             layer = layer + 1
         return activations, outputs
+    
+    """
+        backpropagate():
+            Description: The workhorse of modern day neural networks. 
+                         Determines the synaptic changes required of a neural
+                         network to minimise its objective function, by 
+                         tracing the gradient of weight changes with respect 
+                         to the objective function.
+            
+            Parameters: 
+                stimulus: The input of the neural network. Backpropagation 
+                          requires first a feedforward-pass to determine the 
+                          network output and thus error. backpropagate() 
+                          performs a feedforward to get the errors associated 
+                          with the input or "stimulus". An array.
+                          
+                target:   The desired output of the network, used to get the 
+                          error of the network. An array.
+                          
+            Returns:
+                dWeights: The change in weights to be applied to the network. 
+                          A python list of numpy arrays, each array containing
+                          the synaptic changes at each layer.
+                
+                dBiases: The change in biases to be applied to the network.
+                         Similarly, to dWeights, a python list of numpy arrays.
+                
+                outputs: The neuron outputs at each layer. A python list of 
+                         numpy arrays.
+    """
     
     def backpropagate(self, stimulus, target):
         dWeights = [np.zeros(w.shape) for w in self.weights]
@@ -138,6 +190,66 @@ class SynapticCacheNetwork():
             dWeights[-layer] = np.outer(error, outputs[-layer-1].T)
             dBiases[-layer] = error
         return dWeights, dBiases, outputs
+    
+    """
+        consolidate():
+            Description: Implements the biological side of the neural network. 
+                         Specifically, the consolidation scheme used by the 
+                         network to update the l-LTP weights, the decay of 
+                         e-LTP weights and energy usage of the e-LTP and l-LTP 
+                         weights. Consolidation occurs when the weight changes
+                         surpass a consolidation threshold. (Note: All 
+                         thresholds are normalised to the single synapse level.)
+                         
+                Scheme:                
+                    1: Immediately consolidate, classic learning.
+                    
+                    2: Synapse theshold/synapse consolidation -
+                        Consolidate a single synapse if the synaptic changes 
+                        of that synapse passes the threshold.
+                        
+                    3: Synapse theshold/neuron consolidation -
+                        Consolidate the neuron's input synapses if a single
+                        input synapse's synpatic changes passes the threshold.
+                        
+                    4: Neuron theshold/neuron consolidation -
+                        Consolidate all of a neuron's synapses if the mean of 
+                        synpatic changes passes the threshold. 
+                        
+                    5: Neuron theshold/layer consolidation -
+                        Consolidate the layer of synpases, if the mean of 
+                        synaptic changes for a neuron in that layer passes the
+                        threshold. 
+                        
+                    6: Layer theshold/layer consolidation - 
+                        Consolidate the layer of synapses, if the mean of 
+                        synpatic changes in that layer passes the threshold.
+                        
+                    7: Layer theshold/network consolidation - 
+                        Consolidate the all synapses, if the mean of synaptic
+                        changes in a layer passes the threshold. 
+                    
+                    8: Network theshold/network consolidation.
+                        Consolidate all synapses in the mean of synaptic 
+                        changes across the network pass the threshold.
+                        
+                    9: Consolidate based on accuracy (dopamine?) - 
+                        An experimental scheme intended to investigate 
+                        consolidation based on accuracy. (i.e. consolidate if 
+                        the mini-batch of predictions was mostly correct. 
+                        Consolidate if correct, in other words.)
+                        
+            Arguments:
+                dWeights:        The weight changes obtained from backpropagation to 
+                                 be applied to the network.
+                          
+                dBiases:         The bias changes to be applied.
+                
+                score_threshold: Used in an experimental consolidation scheme
+                                 that consolidates depending on how many 
+                                 predictions were correct.
+                          
+    """
     
     def consolidate(self, dWeights, dBiases, score_threshold):
         if (self.decay != 1) and (self.consolidation_scheme != 1):
@@ -257,6 +369,7 @@ class SynapticCacheNetwork():
             energy += np.sum(self.energy_min[layer])
         return energy
     
+    # The total energy of the network
     def compute_network_energy(self):
         energy = 0
         for layer in range(len(self.energy_eLTP)):
@@ -264,6 +377,7 @@ class SynapticCacheNetwork():
             energy += np.sum(self.energy_bias[layer])
         return energy
     
+    # The energy of input and output neurons (used for visualisation purposes.)
     def compute_io_neuron_energy(self): #I'd wanna make this layer-wise energy, but there's difficulty interpreting middle layers
         energy_of_in = np.sum(self.energy_eLTP[0], axis=1) + np.sum(self.energy_lLTP[0], axis=1)
         energy_of_out = np.sum(self.energy_eLTP[-1], axis=0) + np.sum(self.energy_lLTP[-1], axis=0) + np.sum(self.energy_bias[-1])
@@ -274,6 +388,8 @@ class SynapticCacheNetwork():
         energy_of_out = np.sum(self.energy_min[-1], axis=0)
         return energy_of_in, energy_of_out
     
+    # Visualise the input neuron energy (typically associated with some pixels
+    # or features)
     def plot_eLTP_pixel_energy(self, dimensions):
         energy = np.sum(self.energy_eLTP[0], axis=1)
         energy = np.reshape(energy, dimensions)
@@ -292,6 +408,7 @@ class SynapticCacheNetwork():
         plt.imshow(energy)
         plt.show()
     
+    # Plot the e-LTP, l-LTP and bias energy contributions to the output neurons.
     def plot_output_energy_contributions(self):
         lLTP_contribution = np.sum(self.energy_lLTP[-1], axis=0)
         eLTP_contribution = np.sum(self.energy_eLTP[-1], axis=0)
@@ -434,7 +551,13 @@ class SynapticCacheNetwork():
         signal = np.cumsum(signal)
         signal[window:] = signal[window:] - signal[:-window]
         return signal[window - 1:]/window
-     
+"""
+    Activation:
+        Description: Implements the activation function and its derivitives.
+                     Currently, supports ReLU and Sigmoid.        
+        Initialisation:
+            activation_function: The desired activation function. A string.                     
+"""
 class Activation(): 
     def __init__(self, activation_function):
         self.activation_function = activation_function.lower() #string for desired 
@@ -466,6 +589,15 @@ class Activation():
     def relu_prime(self, activation):
         return np.where(activation > 0, 1.0, 0.0)
 
+"""
+    load_mnist():
+        Description: Used to select the MNIST data loading method. Keras is 
+                     much quicker but depends on it being installed. Otherwise
+                     it will load text files that can be created from the MNIST
+                     data files (http://yann.lecun.com/exdb/mnist/) using the 
+                     data converter contained in this repository, 
+                     convert_mnist.py.  
+"""
 
 def load_mnist(using_keras=True):
     if using_keras: # quick load
