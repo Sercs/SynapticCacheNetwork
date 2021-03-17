@@ -1,10 +1,90 @@
+#Author: Aaron Pache
 import numpy as np
 import matplotlib.pyplot as plt
 from keras.datasets import mnist
+
 """
-TODO: other schemes, bias?, fix 0 threshold, merge eLTP and lLTP weights
+TODO:
+    1. Comments!
+    2. Generalisations and clean up (i.e. account for different datasets)
+    3. Biological activation functions (leaky-ReLU, GeLU, ELU)
+    3. Add CNN kernel layers
 """
-np.random.seed(1)
+
+"""
+    SynapticCacheNetwork:
+        Description: Implements feedforward, backproagation and training for
+                     arbitrary-sized and biologically-inspired neural networks.
+                     Artficial weights are distributed between early and 
+                     late Long Term Potentiation weights (e-LTP/l-LTP weights) 
+                     after a mini-batch of training, these handle the more 
+                     biologically specific parameters of synaptic plasticity,
+                     like decay and consolidation.
+                     
+                     In particular, this network tracks the energy usage of 
+                     e-LTP up-keep and l-LTP synaptic changes for various 
+                     consolidation schemes and parameters for biological
+                     networks, under the assumption that energy usage is 
+                     proportional to the change in synaptic strength (l-LTP) 
+                     or the weight itself (e-LTP). 
+                     
+                     It is intended as a general framework for the 
+                     investigation of neural network energy usage, which will
+                     hopefully expand to include multiple activation functions
+                     network architectures and learning rules. Along with 
+                     general improvements to learning time and usability.
+
+        Initialisation:
+           layers:                      a python list containing the number of 
+                                        neurons in each layer (i.e [784 50 10] 
+                                        describes a neural network with 3
+                                        layers containing 784 input neurons, 
+                                        50 hidden and 10 output neurons.)
+                    
+           learning_rate:               The learning rate of the network. 
+                                        Dicates the step size of weight changes 
+                                        in the weight space. Generally, between 
+                                        1 and 0.0001 depending on network 
+                                        specifications. Larger learning rates 
+                                        decrease learning time, but may 
+                                        overshoot minimas leading to 
+                                        instability. Smaller learning rates 
+                                        take longer for training, but are more 
+                                        stable in their approach to the minima.
+                            
+            eLTP_cost:                  The energy penalty for e-LTP weight 
+                                        maintanence applied to the weight 
+                                        itself. It is generally thought that 
+                                        e-LTP or transient synaptic changes 
+                                        consume less energy than l-LTP changes.
+            
+            decay_rate:                 The rate at which eLTP weights decay. 
+                                        Unlike computers, biological systems 
+                                        are afflicted with neural noise and 
+                                        "wear and tear" which leads to 
+                                        forgetting. Decay is a means of 
+                                        simulating this process.
+                            
+            consolidation_scheme:       The method of applying e-LTP weights 
+                                        to l-LTP weights. When sypantic 
+                                        changes pass a specified threshold, 
+                                        e-LTP weight changes are consolidated 
+                                        into the persistant l-LTP form. This 
+                                        can happen under multiple threshold 
+                                        conditions: a single synapse surpassing 
+                                        the threshold, a neuron, a layer, 
+                                        a network or other conditions (maybe 
+                                        even dynamically adjusting between 
+                                        thresholds or schemes.) See 
+                                        "Consolidation()" for more info. There
+                                        are currently 8 implementations.
+                                  
+            consolidation_threshold:    The threshold to consolidate 
+                                        the e-LTP weight changes into the 
+                                        l-LTP weight. Generally, between 
+                                        0.001 and 0.01.                      
+"""
+
 class SynapticCacheNetwork():
     def __init__(self, layers, activation_function, learning_rate, eLTP_cost=0, decay_rate=0, consolidation_scheme=1, consolidation_threshold=1):
         self.n_layers = len(layers)
@@ -193,6 +273,37 @@ class SynapticCacheNetwork():
         energy_of_in = np.sum(self.energy_min[0], axis=1)
         energy_of_out = np.sum(self.energy_min[-1], axis=0)
         return energy_of_in, energy_of_out
+    
+    def plot_eLTP_pixel_energy(self, dimensions):
+        energy = np.sum(self.energy_eLTP[0], axis=1)
+        energy = np.reshape(energy, dimensions)
+        plt.imshow(energy)
+        plt.show()
+        
+    def plot_lLTP_pixel_energy(self, dimensions):
+        energy = np.sum(self.energy_lLTP[0], axis=1)
+        energy = np.reshape(energy, dimensions)
+        plt.imshow(energy)
+        plt.show()
+    
+    def plot_pixel_energy(self, dimensions):
+        energy = np.sum(self.energy_eLTP[0], axis=1) + np.sum(self.energy_lLTP[0], axis=1)
+        energy = np.reshape(energy, dimensions)
+        plt.imshow(energy)
+        plt.show()
+    
+    def plot_output_energy_contributions(self):
+        lLTP_contribution = np.sum(self.energy_lLTP[-1], axis=0)
+        eLTP_contribution = np.sum(self.energy_eLTP[-1], axis=0)
+        bias_contribution = np.sum(self.energy_bias[-1])
+        energy = [lLTP_contribution, eLTP_contribution, bias_contribution]
+        labs = ['lLTP', 'eLTP', 'bias']
+        figs, ax = plt.subplots()
+        X = np.arange(lLTP_contribution.shape[0])
+        for i in range(0, 3):
+            plt.bar(X, energy[i], bottom = np.sum(energy[:i], axis=0), label=labs[i])
+        ax.legend()
+        plt.show()
     
     def train(self, x_train, y_train, n_epochs, desired_batch_size):
         errors = np.zeros((n_epochs,))
