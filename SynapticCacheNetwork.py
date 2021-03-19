@@ -5,6 +5,7 @@ from keras.datasets import mnist
 
 """
 TODO:
+    0. Prediction!
     1. Comments!
     2. Generalisations and clean up (i.e. account for different datasets)
     3. Biological activation functions (leaky-ReLU, GeLU, ELU)
@@ -100,7 +101,6 @@ class SynapticCacheNetwork():
         self.weights_eLTP = [np.zeros(w.shape) for w in self.weights]
         self.weights_lLTP = [np.zeros(w.shape) for w in self.weights]
         self.biases = [np.zeros(b) for b in layers[1:]]
-        self.layers = layers
         self.activation_function = activation_function
         self.learning_rate = learning_rate
         self.eLTP_cost = eLTP_cost
