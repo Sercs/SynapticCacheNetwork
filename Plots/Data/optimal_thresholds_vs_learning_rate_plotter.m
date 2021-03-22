@@ -6,6 +6,7 @@ plot(x, [netnet;synsyn], 'linewidth', 3)
 params = polyfit(x, mean([netnet;synsyn], 1), 1)
 hold on
 plot(x, params(1)*x+params(2), 'k', 'linewidth', 3)
+legend({'Network/Network', 'Synapse/Synapse', 'Line of Best Fit'}, 'fontsize', 14)
 
 
 title('Optimal Threshold vs Learning Rate','fontsize', 14)
