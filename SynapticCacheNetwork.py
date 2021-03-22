@@ -5,11 +5,11 @@ from keras.datasets import mnist
 
 """
 TODO:
-    0. Prediction!
-    1. Comments!
-    2. Generalisations and clean up (i.e. account for different datasets)
-    3. Biological activation functions (leaky-ReLU, GeLU, ELU)
-    3. Add CNN kernel layers
+    1. Generalisations and clean up (i.e. account for different datasets)
+    2. Optional Consolidation
+    3. General Neuron Tracker (i.e. track weight changes for each neuron across training)? (Unsure if this is computationally good)
+    4. Biological activation functions (leaky-ReLU, GeLU, ELU)
+    5. Add CNN kernel layers
 """
 
 """
@@ -190,6 +190,10 @@ class SynapticCacheNetwork():
             dWeights[-layer] = np.outer(error, outputs[-layer-1].T)
             dBiases[-layer] = error
         return dWeights, dBiases, outputs
+    
+    def predict(self, stimulus):
+        activations, outputs = self.feedforward(stimulus)
+        return np.argmax(outputs[-1])
     
     """
         consolidate():
@@ -434,8 +438,8 @@ class SynapticCacheNetwork():
                     batch_size = int(x_train.shape[0]-np.floor(x_train.shape[0]/desired_batch_size)*desired_batch_size)
                 else:
                     batch_size = desired_batch_size
-                accumulated_dWeights = [np.zeros(w.shape) for w in self.weights_eLTP]
-                accumulated_dBiases = [np.zeros(b.shape) for b in self.biases]
+                accumulated_dWeights = [np.zeros(w.shape).T for w in self.weights_eLTP]
+                accumulated_dBiases = [np.zeros(b.shape).T for b in self.biases]
                 score = 0
                 score_threshold = False
                 for index in range(0, batch_size):
@@ -444,15 +448,15 @@ class SynapticCacheNetwork():
                     y = y_train[sample]
                     dWeights, dBiases, outputs = self.backpropagate(x, y)
                     for layer in range(len(accumulated_dWeights)):
-                        accumulated_dWeights[layer] += dWeights[layer].T/batch_size
-                        accumulated_dBiases[layer] += dBiases[layer].T/batch_size
+                        accumulated_dWeights[layer] += dWeights[layer]/batch_size
+                        accumulated_dBiases[layer] += dBiases[layer]/batch_size
                     errors[epoch] += self.cross_entropy_Loss(outputs[-1], y)/x_train.shape[0]
                     accuracies[epoch] += (self.prediction_score(y, outputs[-1])/y_train.shape[0])*100
                     score += self.prediction_score(y, outputs[-1])
                 if batch_size != 0:
                     if score == batch_size/2: # hopefully investigate dopamine-like consolidation
                         score_threshold = True
-                self.consolidate(dWeights, dBiases, score_threshold)
+                self.consolidate(accumulated_dWeights, accumulated_dBiases, score_threshold) # we need to apply accumulated gradients, that was painful
                 energies[epoch] = self.compute_network_energy()
             print("Epoch ", epoch+1, ": error = ", np.around(errors[epoch], 4), "| accuracy = ", np.around(accuracies[epoch], 2), "| Energy = ", np.around(energies[epoch], 2))
         for layer in range(len(self.weights_eLTP)):
