@@ -563,13 +563,16 @@ class SynapticCacheNetwork():
             activation_function: The desired activation function. A string.                     
 """
 class Activation(): 
-    def __init__(self, activation_function):
+    def __init__(self, activation_function, ratio=0.0):
         self.activation_function = activation_function.lower() #string for desired 
+        self.ratio = ratio
     def __call__(self, activation):
         if self.activation_function == 'relu':
             return self.relu(activation)
         elif self.activation_function == 'sigmoid':
             return self.sigmoid(activation)
+        elif self.activation_function == 'mixed relu':
+            return self.mixed_relu(activation)
         else:
             raise Exception("Invalid Activation Function")
                
@@ -578,6 +581,8 @@ class Activation():
             return self.relu_prime(activation)
         elif self.activation_function == 'sigmoid':
             return self.sigmoid_prime(activation)
+        elif self.activation_function == 'mixed relu':
+            return self.mixed_relu_prime(activation)
         else:
             raise Exception("Invalid Activation Function")
                 
@@ -592,6 +597,24 @@ class Activation():
     
     def relu_prime(self, activation):
         return np.where(activation > 0, 1.0, 0.0)
+    
+    def relu_negative(self, activation):
+        return np.minimum(activation, 0.0)
+    
+    def relu_negative_prime(self, activation):
+        return np.where(activation < 0, 1.0, 0.0)
+    
+    def mixed_relu(self, activation):
+        inhibitory = int(np.shape(activation)[0]*self.ratio)
+        inhibit = self.relu_negative(activation[:inhibitory])
+        excite = self.relu(activation[inhibitory:])
+        return np.concatenate((inhibit, excite))
+    
+    def mixed_relu_prime(self, activation):
+        inhibitory = int(np.shape(activation)[0]*self.ratio)
+        inhibit = self.relu_negative_prime(activation[:inhibitory])
+        excite = self.relu_prime(activation[inhibitory:])
+        return np.concatenate((inhibit, excite))
 
 """
     load_mnist():
